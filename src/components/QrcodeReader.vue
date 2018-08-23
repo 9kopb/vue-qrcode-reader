@@ -16,10 +16,10 @@
         class="qrcode-reader__tracking-layer"
       ></canvas>
 
-      <video
-        ref="video"
-        class="qrcode-reader__camera"
-      ></video>
+      <canvas
+        ref="cameraLayer"
+        class="qrcode-reader__camera-layer"
+      ></canvas>
     </div>
   </div>
 </template>
@@ -40,10 +40,12 @@ export default {
     /** deprecated in favor of `camera` **/
     videoConstraints: {
       type: [Object, Boolean],
+      default: undefined,
     },
 
     camera: {
       type: [Object, Boolean],
+      default: undefined,
       // default: () => ({}) // empty object
     },
 
@@ -57,7 +59,7 @@ export default {
     return {
       cameraInstance: null,
       destroyed: false,
-      readyAfterPause: true,
+      pausePlayback: () => {},
     }
   },
 
@@ -66,8 +68,7 @@ export default {
     shouldScan () {
       return this.paused === false &&
         this.cameraInstance !== null &&
-        this.destroyed === false &&
-        this.readyAfterPause
+        this.destroyed === false
     },
 
     /**
@@ -161,20 +162,11 @@ export default {
     },
 
     paused (paused) {
-      const video = this.$refs.video
-
       if (paused) {
-        video.pause()
-
-        this.readyAfterPause = false
+        this.pausePlayback()
       } else {
-        video.play()
-
-        video.addEventListener(
-          'timeupdate',
-          () => { this.readyAfterPause = true },
-          { once: true }
-        )
+        this.pausePlayback()
+        this.pausePlayback = this.cameraInstance.streamToCanvas(this.$refs.cameraLayer)
       }
     },
 
@@ -192,24 +184,19 @@ export default {
   },
 
   beforeDestroy () {
-    if (this.cameraInstance !== null) {
-      this.cameraInstance.stop()
-    }
-
+    this.beforeResetCamera()
     this.destroyed = true
   },
 
   methods: {
 
     async init () {
-      if (this.cameraInstance !== null) {
-        this.cameraInstance.stop()
-      }
+      this.beforeResetCamera()
 
-      if (this.videoConstraints === false) {
-        this.cameraInstance = null
-      } else {
-        this.cameraInstance = await Camera(this.constraints, this.$refs.video)
+      if (this.constraints.video !== false) {
+        this.cameraInstance = await Camera(this.constraints)
+
+        this.pausePlayback = this.cameraInstance.streamToCanvas(this.$refs.cameraLayer)
       }
     },
 
@@ -276,6 +263,15 @@ export default {
       })())
     },
 
+    beforeResetCamera () {
+      if (this.cameraInstance !== null) {
+        this.pausePlayback()
+        this.cameraInstance.stop()
+      }
+
+      this.cameraInstance = null
+    },
+
     /**
      * The coordinates are based on the original camera resolution but the
      * video element is responsive and scales with space available. Therefore
@@ -285,8 +281,10 @@ export default {
       if (location === null) {
         return null
       } else {
-        const widthRatio = this.cameraInstance.displayWidth / this.cameraInstance.resolutionWidth
-        const heightRatio = this.cameraInstance.displayHeight / this.cameraInstance.resolutionHeight
+        const cameraLayer = this.$refs.cameraLayer
+
+        const widthRatio = this.cameraInstance.getWidth() / cameraLayer.offsetWidth
+        const heightRatio = this.cameraInstance.getHeight() / cameraLayer.offsetHeight
 
         const normalizeEntry = ({ x, y }) => ({
           x: Math.floor(x * widthRatio),
@@ -304,11 +302,13 @@ export default {
     repaintTrack (location) {
       location = this.normalizeLocation(location)
 
-      const canvas = this.$refs.trackingLayer
-      const ctx = canvas.getContext('2d')
+      const trackingLayer = this.$refs.trackingLayer
+      const cameraLayer = this.$refs.cameraLayer
 
-      canvas.width = this.cameraInstance.displayWidth
-      canvas.height = this.cameraInstance.displayHeight
+      const ctx = trackingLayer.getContext('2d')
+
+      trackingLayer.width = cameraLayer.offsetWidth
+      trackingLayer.height = cameraLayer.offsetHeight
 
       window.requestAnimationFrame(
         () => this.trackRepaintFunction(location, ctx)

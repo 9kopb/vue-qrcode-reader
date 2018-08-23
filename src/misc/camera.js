@@ -7,20 +7,12 @@ class Camera {
     this.stream = stream
   }
 
-  get resolutionWidth () {
+  getWidth () {
     return this.videoEl.videoWidth
   }
 
-  get resolutionHeight () {
+  getHeight () {
     return this.videoEl.videoHeight
-  }
-
-  get displayWidth () {
-    return this.videoEl.offsetWidth
-  }
-
-  get displayHeight () {
-    return this.videoEl.offsetHeight
   }
 
   stop () {
@@ -33,13 +25,39 @@ class Camera {
     return imageDataFromVideo(this.videoEl)
   }
 
+  streamToCanvas (canvasEl) {
+    let keepStreaming = true
+
+    const ctx = canvasEl.getContext('2d')
+
+    const paintFrame = () => {
+      if (keepStreaming && !this.videoEl.ended) {
+        window.requestAnimationFrame(paintFrame)
+
+        canvasEl.width = this.getWidth()
+        canvasEl.height = this.getHeight()
+
+        ctx.drawImage(this.videoEl, 0, 0, canvasEl.width, canvasEl.height)
+      }
+    }
+
+    paintFrame()
+
+    const stopStreaming = () => {
+      keepStreaming = false
+    }
+
+    return stopStreaming
+  }
+
 }
 
-export default async function (constraints, videoEl) {
+export default async function (constraints) {
   if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
     throw new Error('WebRTC API not supported in this browser')
   }
 
+  const videoEl = document.createElement('video')
   const stream = await navigator.mediaDevices.getUserMedia(constraints)
 
   const streamLoadedPromise = new Promise((resolve, reject) => {
