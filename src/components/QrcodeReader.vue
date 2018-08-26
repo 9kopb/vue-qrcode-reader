@@ -59,7 +59,7 @@ export default {
     return {
       cameraInstance: null,
       destroyed: false,
-      pausePlayback: () => {},
+      pauseCamera: () => {},
     }
   },
 
@@ -119,26 +119,24 @@ export default {
     trackRepaintFunction () {
       if (this.track === true) {
         return function (location, ctx) {
-          if (location !== null) {
-            const {
-              topLeftCorner,
-              topRightCorner,
-              bottomLeftCorner,
-              bottomRightCorner,
-            } = location
+          const {
+            topLeftCorner,
+            topRightCorner,
+            bottomLeftCorner,
+            bottomRightCorner,
+          } = location
 
-            ctx.strokeStyle = 'red'
+          ctx.strokeStyle = 'red'
 
-            ctx.beginPath()
-            ctx.moveTo(topLeftCorner.x, topLeftCorner.y)
-            ctx.lineTo(bottomLeftCorner.x, bottomLeftCorner.y)
-            ctx.lineTo(bottomRightCorner.x, bottomRightCorner.y)
-            ctx.lineTo(topRightCorner.x, topRightCorner.y)
-            ctx.lineTo(topLeftCorner.x, topLeftCorner.y)
-            ctx.closePath()
+          ctx.beginPath()
+          ctx.moveTo(topLeftCorner.x, topLeftCorner.y)
+          ctx.lineTo(bottomLeftCorner.x, bottomLeftCorner.y)
+          ctx.lineTo(bottomRightCorner.x, bottomRightCorner.y)
+          ctx.lineTo(topRightCorner.x, topRightCorner.y)
+          ctx.lineTo(topLeftCorner.x, topLeftCorner.y)
+          ctx.closePath()
 
-            ctx.stroke()
-          }
+          ctx.stroke()
         }
       } else if (this.track === false) {
         return null
@@ -163,10 +161,9 @@ export default {
 
     paused (paused) {
       if (paused) {
-        this.pausePlayback()
+        this.pauseCamera()
       } else {
-        this.pausePlayback()
-        this.pausePlayback = this.cameraInstance.streamToCanvas(this.$refs.cameraLayer)
+        this.playCamera()
       }
     },
 
@@ -195,8 +192,7 @@ export default {
 
       if (this.constraints.video !== false) {
         this.cameraInstance = await Camera(this.constraints)
-
-        this.pausePlayback = this.cameraInstance.streamToCanvas(this.$refs.cameraLayer)
+        this.playCamera()
       }
     },
 
@@ -265,11 +261,18 @@ export default {
 
     beforeResetCamera () {
       if (this.cameraInstance !== null) {
-        this.pausePlayback()
+        this.pauseCamera()
         this.cameraInstance.stop()
       }
 
       this.cameraInstance = null
+    },
+
+    playCamera () {
+      // clear tracking canvas before playing camera
+      this.repaintTrack(null)
+
+      this.pauseCamera = this.cameraInstance.streamToCanvas(this.$refs.cameraLayer)
     },
 
     /**
@@ -277,42 +280,44 @@ export default {
      * video element is responsive and scales with space available. Therefore
      * the coordinates are re-calculated to be relative to the video element.
      */
-    normalizeLocation (location) {
-      if (location === null) {
-        return null
-      } else {
-        const cameraLayer = this.$refs.cameraLayer
+    normalizeLocation (widthRatio, heightRatio, location) {
+      const normalizeEntry = ({ x, y }) => ({
+        x: Math.floor(x * widthRatio),
+        y: Math.floor(y * heightRatio),
+      })
 
-        const widthRatio = this.cameraInstance.getWidth() / cameraLayer.offsetWidth
-        const heightRatio = this.cameraInstance.getHeight() / cameraLayer.offsetHeight
+      const joinObjects = (objA, objB) => ({ ...objA, ...objB })
 
-        const normalizeEntry = ({ x, y }) => ({
-          x: Math.floor(x * widthRatio),
-          y: Math.floor(y * heightRatio),
-        })
-
-        const joinObjects = (objA, objB) => ({ ...objA, ...objB })
-
-        return Object.entries(location)
-          .map(([ key, val ]) => ({ [key]: normalizeEntry(val) }))
-          .reduce(joinObjects, {})
-      }
+      return Object.entries(location)
+        .map(([ key, val ]) => ({ [key]: normalizeEntry(val) }))
+        .reduce(joinObjects, {})
     },
 
     repaintTrack (location) {
-      location = this.normalizeLocation(location)
-
       const trackingLayer = this.$refs.trackingLayer
       const cameraLayer = this.$refs.cameraLayer
+      const cameraInstance = this.cameraInstance
 
-      const ctx = trackingLayer.getContext('2d')
+      window.requestAnimationFrame(() => {
+        const ctx = trackingLayer.getContext('2d')
 
-      trackingLayer.width = cameraLayer.offsetWidth
-      trackingLayer.height = cameraLayer.offsetHeight
+        if (location === null) {
+          ctx.clearRect(0, 0, trackingLayer.width, trackingLayer.height)
+        } else {
+          const displayWidth = cameraLayer.offsetWidth
+          const displayHeight = cameraLayer.offsetHeight
 
-      window.requestAnimationFrame(
-        () => this.trackRepaintFunction(location, ctx)
-      )
+          trackingLayer.width = displayWidth
+          trackingLayer.height = displayHeight
+
+          const widthRatio = cameraInstance.getWidth() / displayWidth
+          const heightRatio = cameraInstance.getHeight() / displayHeight
+
+          location = this.normalizeLocation(widthRatio, heightRatio, location)
+
+          this.trackRepaintFunction(location, ctx)
+        }
+      })
     },
 
   },
